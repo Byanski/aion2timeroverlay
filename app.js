@@ -81,9 +81,14 @@
     // Tab buttons
     document.querySelectorAll('.tab-btn').forEach(btn => {
       btn.addEventListener('click', () => {
+        const tab = btn.getAttribute('data-tab');
+        if (tab === 'cubes') {
+          switchAppMode('cubes');
+          return;
+        }
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
-        activeTab = btn.getAttribute('data-tab');
+        activeTab = tab;
         renderEventsList();
       });
     });
