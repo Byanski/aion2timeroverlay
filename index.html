@@ -108,20 +108,38 @@
     <!-- Category Tabs -->
     <div class="filter-tabs">
       <button class="tab-btn active" data-tab="all">All Events</button>
-      <button class="tab-btn" data-tab="boss">World Bosses</button>
+      <button class="tab-btn" data-tab="major_boss">👑 Major Bosses</button>
+      <button class="tab-btn" data-tab="lesser_boss">🌿 Lesser Bosses</button>
+      <button class="tab-btn" data-tab="boss">All Bosses (53)</button>
       <button class="tab-btn" data-tab="rift">Rifts & Invasions</button>
       <button class="tab-btn" data-tab="siege">Sieges</button>
       <button class="tab-btn" data-tab="event">Events</button>
       <button class="tab-btn" data-tab="reset">Resets</button>
-      <button class="tab-btn" data-tab="custom">Field Timers</button>
+      <button class="tab-btn" data-tab="custom">Custom Timers</button>
       <button class="tab-btn" id="category-tab-cubes" data-tab="cubes" style="color:var(--accent-gold); border-color:rgba(251,191,36,0.3);">📦 Hidden Cubes</button>
+    </div>
+
+    <!-- Boss Sub-Filter Bar (Active when viewing World Bosses) -->
+    <div id="boss-subfilters" class="boss-subfilters hidden">
+      <button class="boss-subtab-btn active" data-boss-filter="all">All Bosses (53)</button>
+      <button class="boss-subtab-btn" data-boss-filter="major">👑 Major Bosses (4)</button>
+      <button class="boss-subtab-btn" data-boss-filter="verteron">🌿 Verteron Lesser (22)</button>
+      <button class="boss-subtab-btn" data-boss-filter="altgard">❄️ Altgard Lesser (21)</button>
+      <button class="boss-subtab-btn" data-boss-filter="alive">🟢 Ready / Alive</button>
+      <button class="boss-subtab-btn" data-boss-filter="cooldown">⏱️ On Cooldown</button>
     </div>
 
     <!-- Search & Quick Action Bar -->
     <div class="search-action-bar">
       <input type="text" id="search-input" class="search-input" placeholder="🔍 Search bosses, rifts, zones...">
+      <button id="btn-mark-all-alive" class="hud-btn" style="white-space:nowrap; background:rgba(16,185,129,0.2); border-color:#10b981;" title="Mark all lesser & field bosses as alive/spawned">
+        🟢 Mark All Alive
+      </button>
+      <button id="btn-quick-add-all-bosses" class="hud-btn hidden" style="white-space:nowrap;" title="Track all field & world bosses">
+        👑 Track All Bosses
+      </button>
       <button id="btn-add-custom-timer" class="hud-btn" style="white-space:nowrap;" title="Add Custom Boss Respawn Timer">
-        + Custom Boss
+        + Custom
       </button>
     </div>
 
@@ -199,6 +217,8 @@
         <!-- Interactive Map Viewport -->
         <div id="cube-map-viewport" class="map-viewport">
           <div id="cube-map-plane" class="map-plane">
+            <!-- High-resolution 8x8 map tiles layer (16,384 x 16,384 detail) -->
+            <div id="cube-map-tiles" class="map-tiles-container"></div>
             <img id="cube-map-img" class="map-image" src="assets/maps/verteron.webp" alt="Zone Map" draggable="false">
             
             <!-- Radar SVG overlay for acoustic circles and detection rays -->
@@ -206,6 +226,18 @@
             
             <!-- Pins container layer -->
             <div id="cube-pins-layer" class="map-pins-layer"></div>
+          </div>
+
+          <!-- Floating Group Expansion Bar (Shown when an area expands into spawn spots) -->
+          <div id="cube-expanded-bar" class="cube-expanded-bar hidden">
+            <button id="btn-collapse-group" class="hud-btn-mini" title="Collapse back to all groups">
+              <span>⬅ All Groups</span>
+            </button>
+            <div class="expanded-bar-info">
+              <span id="expanded-group-badge" class="expanded-group-badge">A</span>
+              <span id="expanded-group-title" class="expanded-group-title">Altamia Canyon</span>
+              <span id="expanded-group-spots-count" class="expanded-group-spots-count">(10 Possible Locations)</span>
+            </div>
           </div>
 
           <!-- Radar detection notification banner -->
@@ -328,29 +360,40 @@
 
     <!-- Custom Boss Modal -->
     <div id="modal-custom-boss" class="hidden">
-      <div class="modal-content">
+      <div class="modal-content" style="max-width: 400px;">
         <div class="modal-title">⏱️ Add Boss Respawn Timer</div>
+        
+        <div>
+          <label style="font-size:10px; color:var(--text-dim);">Quick Select World / Field Boss Preset:</label>
+          <select id="custom-boss-preset-select" class="modal-input" style="width:100%; margin-top:2px; cursor:pointer;">
+            <option value="">-- Choose a Preset Boss (or type custom below) --</option>
+          </select>
+        </div>
+
         <div>
           <label style="font-size:10px; color:var(--text-dim);">Boss Name:</label>
-          <input type="text" id="custom-boss-name" class="modal-input" placeholder="e.g. Queen Ant" style="width:100%; margin-top:2px;">
+          <input type="text" id="custom-boss-name" class="modal-input" placeholder="e.g. Immortal Gartua" style="width:100%; margin-top:2px;">
         </div>
         <div>
           <label style="font-size:10px; color:var(--text-dim);">Location / Notes (optional):</label>
-          <input type="text" id="custom-boss-loc" class="modal-input" placeholder="e.g. The Hive - Lower Level" style="width:100%; margin-top:2px;">
+          <input type="text" id="custom-boss-loc" class="modal-input" placeholder="e.g. Reshanta Abyss" style="width:100%; margin-top:2px;">
         </div>
         <div style="display:flex; gap:8px;">
           <div style="flex:1;">
             <label style="font-size:10px; color:var(--text-dim);">Cooldown Hours:</label>
-            <input type="number" id="custom-boss-hours" class="modal-input" value="2" min="0" max="72" style="width:100%; margin-top:2px;">
+            <input type="number" id="custom-boss-hours" class="modal-input" value="4" min="0" max="72" style="width:100%; margin-top:2px;">
           </div>
           <div style="flex:1;">
             <label style="font-size:10px; color:var(--text-dim);">Cooldown Minutes:</label>
             <input type="number" id="custom-boss-mins" class="modal-input" value="0" min="0" max="59" style="width:100%; margin-top:2px;">
           </div>
         </div>
-        <div style="display:flex; justify-content:flex-end; gap:6px; margin-top:8px;">
-          <button id="btn-cancel-custom" class="hud-btn">Cancel</button>
-          <button id="btn-save-custom" class="hud-btn active">Start Countdown</button>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:10px; gap:6px;">
+          <button id="btn-add-all-presets" class="hud-btn-mini" style="background:rgba(239,68,68,0.2); border-color:#ef4444;" title="Add all 15 field bosses to tracker">➕ Track All 15 Field Bosses</button>
+          <div style="display:flex; gap:6px;">
+            <button id="btn-cancel-custom" class="hud-btn">Cancel</button>
+            <button id="btn-save-custom" class="hud-btn active">Start Timer</button>
+          </div>
         </div>
       </div>
     </div>

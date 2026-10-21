@@ -60,6 +60,14 @@
   const customBossLoc = document.getElementById('custom-boss-loc');
   const customBossHours = document.getElementById('custom-boss-hours');
   const customBossMins = document.getElementById('custom-boss-mins');
+  const btnQuickAddAllBosses = document.getElementById('btn-quick-add-all-bosses');
+  const customBossPresetSelect = document.getElementById('custom-boss-preset-select');
+  const btnAddAllPresets = document.getElementById('btn-add-all-presets');
+  const bossSubfilters = document.getElementById('boss-subfilters');
+  const btnMarkAllAlive = document.getElementById('btn-mark-all-alive');
+
+  let activeBossFilter = 'all';
+  let bossCooldowns = JSON.parse(localStorage.getItem('aion2_boss_cooldowns') || '{}');
 
   // Initialize
   function init() {
@@ -89,9 +97,41 @@
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         activeTab = tab;
+
+        if (bossSubfilters) {
+          if (activeTab === 'boss' || activeTab === 'lesser_boss') {
+            bossSubfilters.classList.remove('hidden');
+          } else {
+            bossSubfilters.classList.add('hidden');
+          }
+        }
+
         renderEventsList();
       });
     });
+
+    // Boss Sub-Filter Buttons
+    document.querySelectorAll('.boss-subtab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.boss-subtab-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        activeBossFilter = btn.getAttribute('data-boss-filter') || 'all';
+        renderEventsList();
+      });
+    });
+
+    // Mark All Alive Button
+    if (btnMarkAllAlive) {
+      btnMarkAllAlive.addEventListener('click', () => {
+        bossCooldowns = {};
+        localStorage.setItem('aion2_boss_cooldowns', JSON.stringify(bossCooldowns));
+        customTimers.forEach(ct => {
+          ct.respawnAt = Date.now();
+        });
+        localStorage.setItem('aion2_custom_timers', JSON.stringify(customTimers));
+        updateAll();
+      });
+    }
 
     // Search input
     searchInput.addEventListener('input', (e) => {
@@ -209,6 +249,7 @@
     // Initialize Mode Navigation & Hidden Cubes Hunter
     initModeNavigation();
     initCubesHunter();
+    initBossPresets();
   }
 
   function updateSoundBtnState() {
@@ -397,22 +438,78 @@
     }
   }
 
+  // Process all Major and Lesser World Bosses
+  function getProcessedBosses(now) {
+    if (typeof ALL_WORLD_BOSSES === 'undefined') return [];
+    return ALL_WORLD_BOSSES.map(boss => {
+      if (boss.type === 'scheduled') {
+        const occ = getNextOccurrence(boss, now);
+        if (occ) checkAlerts(boss, occ);
+        return {
+          ...boss,
+          category: 'boss',
+          isWorldBoss: true,
+          occurrence: occ
+        };
+      }
+
+      // Cooldown-based Major & Lesser World Bosses
+      const respawnAt = bossCooldowns[boss.id];
+      let msRemaining = 0;
+      let isActive = true;
+      let targetDate = now;
+
+      if (respawnAt && respawnAt > now.getTime()) {
+        msRemaining = respawnAt - now.getTime();
+        isActive = false;
+        targetDate = new Date(respawnAt);
+        checkAlerts(boss, { targetDate, targetMs: respawnAt, msRemaining, isActive: false });
+      }
+
+      return {
+        ...boss,
+        category: 'boss',
+        isWorldBoss: true,
+        isBossCooldown: true,
+        respawnAt: respawnAt || 0,
+        occurrence: {
+          targetDate,
+          targetMs: targetDate.getTime(),
+          msRemaining,
+          isActive,
+          activeRemainingMs: 0
+        }
+      };
+    });
+  }
+
+  // Helper to deduplicate array by item id
+  function deduplicateById(items) {
+    const seen = new Set();
+    return items.filter(item => {
+      if (!item || !item.id) return false;
+      if (seen.has(item.id)) return false;
+      seen.add(item.id);
+      return true;
+    });
+  }
+
   // Update clock & all events every second
   function updateAll() {
     const now = new Date();
     localTimeClock.textContent = now.toLocaleTimeString();
 
-    // Calculate status for all scheduled events
-    const processedEvents = SCHEDULED_EVENTS.map(ev => {
-      const occ = getNextOccurrence(ev, now);
-      if (occ) {
-        checkAlerts(ev, occ);
-      }
-      return {
-        ...ev,
-        occurrence: occ
-      };
-    }).filter(e => e.occurrence !== null);
+    // Process all 53 Major and Lesser World Bosses (single source of truth for bosses)
+    const processedBosses = getProcessedBosses(now);
+
+    // Process scheduled non-boss events (Rifts, Sieges, Invasions, Resets)
+    const processedScheduled = SCHEDULED_EVENTS
+      .filter(ev => ev.category !== 'boss')
+      .map(ev => {
+        const occ = getNextOccurrence(ev, now);
+        if (occ) checkAlerts(ev, occ);
+        return { ...ev, occurrence: occ };
+      }).filter(e => e.occurrence !== null);
 
     // Add custom field timers
     const processedCustom = customTimers.map(ct => {
@@ -422,7 +519,7 @@
         id: ct.id,
         name: ct.name,
         category: 'custom',
-        categoryLabel: 'Custom Boss',
+        categoryLabel: isActive ? 'SPAWNED / READY' : 'Custom Boss',
         location: ct.location || 'Custom Field Boss',
         icon: '💀',
         color: '#f87171',
@@ -438,18 +535,23 @@
       };
     });
 
-    const allCombined = [...processedEvents, ...processedCustom];
+    // Determine upcoming event for Hero "Next Up" card:
+    // Considers upcoming scheduled events and bosses currently on cooldown
+    const nextCandidates = deduplicateById([
+      ...processedScheduled,
+      ...processedBosses.filter(b => b.type === 'scheduled' || !b.occurrence.isActive),
+      ...processedCustom.filter(c => !c.occurrence.isActive)
+    ]);
 
-    // Sort by soonest occurrence (active events first, then lowest msRemaining)
-    allCombined.sort((a, b) => {
+    nextCandidates.sort((a, b) => {
       if (a.occurrence.isActive && !b.occurrence.isActive) return -1;
       if (!a.occurrence.isActive && b.occurrence.isActive) return 1;
       return a.occurrence.msRemaining - b.occurrence.msRemaining;
     });
 
     // Update Hero "Next Up" card
-    if (allCombined.length > 0) {
-      const nextOne = allCombined[0];
+    if (nextCandidates.length > 0) {
+      const nextOne = nextCandidates[0];
       const occ = nextOne.occurrence;
       nextUpIcon.textContent = nextOne.icon || '⏳';
       nextUpName.textContent = nextOne.name;
@@ -466,96 +568,164 @@
         nextUpCountdown.style.color = 'var(--accent-gold)';
         nextUpMeta.textContent = formatLocalTargetTime(occ.targetDate);
 
-        // Progress bar (fills as event gets closer, base scale 2 hours)
-        const totalCycle = (nextOne.durationMinutes || 30) * 60 * 1000 * 4;
+        const totalCycle = (nextOne.durationMinutes || (nextOne.defaultMinutes ? nextOne.defaultMinutes : 30)) * 60 * 1000;
         const progress = Math.max(0, Math.min(100, 100 - (occ.msRemaining / totalCycle * 100)));
         nextUpProgressFill.style.width = `${progress}%`;
         nextUpProgressFill.className = occ.msRemaining < 900000 ? 'progress-bar-fill urgent' : 'progress-bar-fill';
       }
     }
 
-    renderEventsList(allCombined);
+    renderEventsList();
   }
 
-  function renderEventsList(events = null) {
-    if (!events) {
-      const now = new Date();
-      events = SCHEDULED_EVENTS.map(ev => ({
-        ...ev,
-        occurrence: getNextOccurrence(ev, now)
-      })).filter(e => e.occurrence !== null);
+  function renderEventsList() {
+    const now = new Date();
+    const scheduled = SCHEDULED_EVENTS.map(ev => ({
+      ...ev,
+      occurrence: getNextOccurrence(ev, now)
+    })).filter(e => e.occurrence !== null);
 
-      const custom = customTimers.map(ct => {
-        const msRemaining = Math.max(0, ct.respawnAt - now.getTime());
-        return {
-          id: ct.id,
-          name: ct.name,
-          category: 'custom',
-          categoryLabel: 'Custom Boss',
-          location: ct.location || 'Custom Field Boss',
-          icon: '💀',
-          color: '#f87171',
-          isCustom: true,
-          respawnAt: ct.respawnAt,
-          occurrence: {
-            targetDate: new Date(ct.respawnAt),
-            targetMs: ct.respawnAt,
-            msRemaining,
-            isActive: msRemaining === 0,
-            activeRemainingMs: 0
-          }
-        };
-      });
+    const bosses = getProcessedBosses(now);
 
-      events = [...events, ...custom].sort((a, b) => {
+    const custom = customTimers.map(ct => {
+      const msRemaining = Math.max(0, ct.respawnAt - now.getTime());
+      const isReady = msRemaining === 0;
+      return {
+        id: ct.id,
+        name: ct.name,
+        category: 'custom',
+        categoryLabel: isReady ? 'SPAWNED / READY' : 'Custom Boss',
+        location: ct.location || 'Custom Field Boss',
+        icon: ct.icon || '⚔️',
+        color: ct.color || '#f87171',
+        isCustom: true,
+        respawnAt: ct.respawnAt,
+        occurrence: {
+          targetDate: new Date(ct.respawnAt),
+          targetMs: ct.respawnAt,
+          msRemaining,
+          isActive: isReady,
+          activeRemainingMs: 0
+        }
+      };
+    });
+
+    let displayList = [];
+
+    if (activeTab === 'all') {
+      // Show all scheduled events + all bosses + custom timers (strictly deduplicated)
+      displayList = deduplicateById([...scheduled, ...bosses, ...custom]);
+
+      // Sort: Active/Alive first, Major bosses prioritized, then soonest upcoming
+      displayList.sort((a, b) => {
+        if (a.tier === 'major' && b.tier !== 'major') return -1;
+        if (a.tier !== 'major' && b.tier === 'major') return 1;
         if (a.occurrence.isActive && !b.occurrence.isActive) return -1;
         if (!a.occurrence.isActive && b.occurrence.isActive) return 1;
         return a.occurrence.msRemaining - b.occurrence.msRemaining;
       });
-    }
+    } else if (activeTab === 'major_boss') {
+      // Show ONLY the 4 Major World Bosses
+      displayList = bosses.filter(b => b.tier === 'major');
+      displayList.sort((a, b) => {
+        if (a.occurrence.isActive && !b.occurrence.isActive) return -1;
+        if (!a.occurrence.isActive && b.occurrence.isActive) return 1;
+        return a.occurrence.msRemaining - b.occurrence.msRemaining;
+      });
+    } else if (activeTab === 'lesser_boss') {
+      // Show ONLY the 49 Lesser World Bosses
+      displayList = bosses.filter(b => b.tier === 'lesser');
 
-    // Filter by tab
-    let filtered = events;
-    if (activeTab !== 'all') {
-      filtered = filtered.filter(e => e.category === activeTab);
+      // Allow subfiltering by zone or status
+      if (activeBossFilter === 'verteron') {
+        displayList = displayList.filter(b => b.zone === 'verteron');
+      } else if (activeBossFilter === 'altgard') {
+        displayList = displayList.filter(b => b.zone === 'altgard');
+      } else if (activeBossFilter === 'alive') {
+        displayList = displayList.filter(b => b.occurrence.isActive);
+      } else if (activeBossFilter === 'cooldown') {
+        displayList = displayList.filter(b => !b.occurrence.isActive);
+      }
+
+      displayList.sort((a, b) => {
+        if (activeBossFilter === 'cooldown') return a.occurrence.msRemaining - b.occurrence.msRemaining;
+        if (a.occurrence.isActive && !b.occurrence.isActive) return -1;
+        if (!a.occurrence.isActive && b.occurrence.isActive) return 1;
+        return a.name.localeCompare(b.name);
+      });
+    } else if (activeTab === 'boss') {
+      // Show ALL 53 World Bosses + custom timers
+      displayList = deduplicateById([...bosses, ...custom]);
+
+      if (activeBossFilter === 'major') {
+        displayList = displayList.filter(b => b.tier === 'major');
+      } else if (activeBossFilter === 'verteron') {
+        displayList = displayList.filter(b => b.zone === 'verteron');
+      } else if (activeBossFilter === 'altgard') {
+        displayList = displayList.filter(b => b.zone === 'altgard');
+      } else if (activeBossFilter === 'alive') {
+        displayList = displayList.filter(b => b.occurrence.isActive);
+      } else if (activeBossFilter === 'cooldown') {
+        displayList = displayList.filter(b => !b.occurrence.isActive);
+      }
+
+      displayList.sort((a, b) => {
+        if (activeBossFilter === 'cooldown') return a.occurrence.msRemaining - b.occurrence.msRemaining;
+        if (a.tier === 'major' && b.tier !== 'major') return -1;
+        if (a.tier !== 'major' && b.tier === 'major') return 1;
+        if (a.occurrence.isActive && !b.occurrence.isActive) return -1;
+        if (!a.occurrence.isActive && b.occurrence.isActive) return 1;
+        return a.occurrence.msRemaining - b.occurrence.msRemaining;
+      });
+    } else if (activeTab === 'custom') {
+      displayList = deduplicateById([...custom, ...bosses.filter(b => !b.occurrence.isActive)]);
+      displayList.sort((a, b) => a.occurrence.msRemaining - b.occurrence.msRemaining);
+    } else {
+      displayList = scheduled.filter(e => e.category === activeTab);
+      displayList.sort((a, b) => a.occurrence.msRemaining - b.occurrence.msRemaining);
     }
 
     // Filter by search query
     if (searchQuery) {
-      filtered = filtered.filter(e =>
+      displayList = displayList.filter(e =>
         e.name.toLowerCase().includes(searchQuery) ||
         (e.location && e.location.toLowerCase().includes(searchQuery)) ||
-        (e.categoryLabel && e.categoryLabel.toLowerCase().includes(searchQuery))
+        (e.categoryLabel && e.categoryLabel.toLowerCase().includes(searchQuery)) ||
+        (e.zone && e.zone.toLowerCase().includes(searchQuery)) ||
+        (e.tier && e.tier.toLowerCase().includes(searchQuery))
       );
     }
 
     eventsList.innerHTML = '';
 
-    if (filtered.length === 0) {
+    if (displayList.length === 0) {
       eventsList.innerHTML = `
-        <div style="text-align:center; padding: 20px; color: var(--text-dim); font-size: 12px;">
-          No events found matching your filter.
+        <div style="text-align:center; padding: 25px 20px; color: var(--text-dim); font-size: 12px;">
+          No bosses or events match the selected filter.
         </div>
       `;
       return;
     }
 
-    filtered.forEach(ev => {
+    displayList.forEach(ev => {
       const occ = ev.occurrence;
-      const card = document.createElement('div');
-      card.className = `event-card ${occ.isActive ? 'active-now' : ''}`;
+      const isCooldownTarget = ev.isBossCooldown || ev.isCustom || ev.type === 'cooldown';
+      const isAlive = occ.isActive;
 
-      const isUrgent = !occ.isActive && occ.msRemaining < 900000; // < 15 mins
-      const countdownClass = occ.isActive ? 'active' : (isUrgent ? 'urgent' : '');
-      const countdownText = occ.isActive ? 'ACTIVE NOW' : formatTimeRemaining(occ.msRemaining);
-      const localTimeText = occ.isActive ? `Ends in ${formatTimeRemaining(occ.activeRemainingMs)}` : formatLocalTargetTime(occ.targetDate);
+      const card = document.createElement('div');
+      card.className = `event-card ${isAlive ? 'active-now' : ''}`;
+
+      const isUrgent = !isAlive && occ.msRemaining < 900000; // < 15 mins
+      const countdownClass = isAlive ? 'active' : (isUrgent ? 'urgent' : '');
+      const countdownText = isAlive ? 'READY / ALIVE' : formatTimeRemaining(occ.msRemaining);
+      const localTimeText = isAlive ? (ev.type === 'scheduled' ? `Ends in ${formatTimeRemaining(occ.activeRemainingMs)}` : 'Spawned in Open World') : formatLocalTargetTime(occ.targetDate);
 
       // Progress bar calc
       let progressPct = 0;
-      if (occ.isActive) {
+      if (isAlive) {
         progressPct = 100;
       } else {
-        const totalCycle = (ev.durationMinutes || 30) * 60 * 1000 * 4;
+        const totalCycle = (ev.defaultMinutes ? ev.defaultMinutes : (ev.durationMinutes || 30)) * 60 * 1000;
         progressPct = Math.max(0, Math.min(100, 100 - (occ.msRemaining / totalCycle * 100)));
       }
 
@@ -565,7 +735,7 @@
             <span class="card-icon">${ev.icon || '⚔️'}</span>
             <div class="card-heading">
               <div class="card-title">${ev.name}</div>
-              <span class="card-category-badge" style="border-left: 2px solid ${ev.color};">${ev.categoryLabel}</span>
+              <span class="card-category-badge" style="border-left: 2px solid ${ev.color};">${ev.categoryLabel || ev.tierLabel || 'World Boss'}</span>
             </div>
           </div>
           <div class="card-countdown-box">
@@ -585,32 +755,61 @@
         </div>
 
         <div class="progress-bar-container">
-          <div class="progress-bar-fill ${occ.isActive ? 'active' : (isUrgent ? 'urgent' : '')}" style="width: ${progressPct}%;"></div>
+          <div class="progress-bar-fill ${isAlive ? 'active' : (isUrgent ? 'urgent' : '')}" style="width: ${progressPct}%;"></div>
         </div>
 
         <div class="card-actions">
-          ${ev.isCustom ? `
-            <div class="card-schedule-info">Custom Field Stopwatch</div>
-            <div style="display:flex; align-items:center; gap:6px;">
-              <button class="btn-kill-boss" data-id="${ev.id}" title="Reset timer when killed">🔄 Reset Cooldown</button>
-              <button class="icon-btn btn-delete-custom" data-id="${ev.id}" title="Delete Timer">🗑️</button>
-            </div>
-          ` : `
-            <div class="card-schedule-info">
-              ${ev.recurrence.type === 'fixed_hours' ? '🔁 Every 3 Hours (' + ev.recurrence.hours.map(h => (h < 10 ? '0' + h : h) + ':00').join(', ') + ')' : (ev.recurrence.type === 'hourly' ? '🔁 Hourly at :' + (ev.recurrence.minute < 10 ? '0' + ev.recurrence.minute : ev.recurrence.minute) : '📅 Weekly')}
-            </div>
-          `}
+          <div class="card-schedule-info">
+            ${isCooldownTarget ? (isAlive ? '<span style="color:#34d399; font-weight:700;">🟢 Boss Spawned / Ready to Hunt</span>' : `⏱️ Respawn in ${formatTimeRemaining(occ.msRemaining)} (CD: ${Math.floor((ev.defaultMinutes || 120)/60)}h)`) : (ev.recurrence ? (ev.recurrence.type === 'fixed_hours' ? '🔁 Every 3 Hours' : (ev.recurrence.type === 'hourly' ? '🔁 Hourly' : '📅 Scheduled')) : '🌐 Global Event')}
+          </div>
+          <div style="display:flex; align-items:center; gap:6px;">
+            ${isCooldownTarget ? `
+              <button class="btn-kill-boss" data-id="${ev.id}" data-type="${ev.isCustom ? 'custom' : 'boss'}" title="Reset cooldown when boss is defeated">🔄 Just Killed</button>
+              ${!isAlive ? `<button class="btn-mark-alive" data-id="${ev.id}" data-type="${ev.isCustom ? 'custom' : 'boss'}" title="Mark boss as spawned / ready now">🟢 Mark Alive</button>` : ''}
+            ` : ''}
+            ${ev.isCustom ? `
+              <button class="icon-btn btn-delete-custom" data-id="${ev.id}" title="Delete Custom Timer">🗑️</button>
+            ` : ''}
+          </div>
         </div>
       `;
 
       eventsList.appendChild(card);
     });
 
-    // Attach listeners to custom boss buttons
+    // Attach listeners to boss buttons
     document.querySelectorAll('.btn-kill-boss').forEach(btn => {
       btn.addEventListener('click', (e) => {
         const id = e.currentTarget.getAttribute('data-id');
-        resetCustomBoss(id);
+        const type = e.currentTarget.getAttribute('data-type');
+        if (type === 'custom') {
+          resetCustomBoss(id);
+        } else {
+          const boss = (typeof ALL_WORLD_BOSSES !== 'undefined') ? ALL_WORLD_BOSSES.find(b => b.id === id) : null;
+          const mins = boss ? (boss.defaultMinutes || 120) : 120;
+          bossCooldowns[id] = Date.now() + (mins * 60 * 1000);
+          localStorage.setItem('aion2_boss_cooldowns', JSON.stringify(bossCooldowns));
+          updateAll();
+        }
+      });
+    });
+
+    document.querySelectorAll('.btn-mark-alive').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const id = e.currentTarget.getAttribute('data-id');
+        const type = e.currentTarget.getAttribute('data-type');
+        if (type === 'custom') {
+          const item = customTimers.find(t => t.id === id);
+          if (item) {
+            item.respawnAt = Date.now();
+            localStorage.setItem('aion2_custom_timers', JSON.stringify(customTimers));
+            updateAll();
+          }
+        } else {
+          delete bossCooldowns[id];
+          localStorage.setItem('aion2_boss_cooldowns', JSON.stringify(bossCooldowns));
+          updateAll();
+        }
       });
     });
 
@@ -620,6 +819,69 @@
         deleteCustomBoss(id);
       });
     });
+  }
+
+  function initBossPresets() {
+    if (customBossPresetSelect && typeof FIELD_BOSS_PRESETS !== 'undefined') {
+      customBossPresetSelect.innerHTML = '<option value="">-- Choose a Preset Boss (or type custom below) --</option>';
+      FIELD_BOSS_PRESETS.forEach((p, idx) => {
+        const opt = document.createElement('option');
+        opt.value = idx;
+        const hrs = Math.floor(p.defaultMinutes / 60);
+        const mins = p.defaultMinutes % 60;
+        const timeStr = `${hrs}h${mins > 0 ? ` ${mins}m` : ''}`;
+        opt.textContent = `${p.icon || '⚔️'} ${p.name} (${timeStr}) - ${p.location}`;
+        customBossPresetSelect.appendChild(opt);
+      });
+
+      customBossPresetSelect.addEventListener('change', (e) => {
+        const idx = e.target.value;
+        if (idx !== '') {
+          const p = FIELD_BOSS_PRESETS[parseInt(idx, 10)];
+          if (p) {
+            customBossName.value = p.name;
+            customBossLoc.value = p.location;
+            customBossHours.value = Math.floor(p.defaultMinutes / 60);
+            customBossMins.value = p.defaultMinutes % 60;
+          }
+        }
+      });
+    }
+
+    if (btnQuickAddAllBosses) {
+      btnQuickAddAllBosses.addEventListener('click', addAllFieldBosses);
+    }
+
+    if (btnAddAllPresets) {
+      btnAddAllPresets.addEventListener('click', () => {
+        addAllFieldBosses();
+        modalCustomBoss.classList.add('hidden');
+      });
+    }
+  }
+
+  function addAllFieldBosses() {
+    if (typeof FIELD_BOSS_PRESETS === 'undefined') return;
+    const now = Date.now();
+    let count = 0;
+    FIELD_BOSS_PRESETS.forEach(p => {
+      const exists = customTimers.some(t => t.name.toLowerCase() === p.name.toLowerCase());
+      if (!exists) {
+        const cooldownMs = p.defaultMinutes * 60 * 1000;
+        customTimers.push({
+          id: 'boss_' + p.name.replace(/\s+/g, '_').toLowerCase(),
+          name: p.name,
+          location: p.location,
+          cooldownMs,
+          respawnAt: now + cooldownMs,
+          icon: p.icon || '⚔️',
+          color: p.color || '#f87171'
+        });
+        count++;
+      }
+    });
+    localStorage.setItem('aion2_custom_timers', JSON.stringify(customTimers));
+    updateAll();
   }
 
   function saveCustomBossTimer() {
@@ -634,12 +896,17 @@
       return;
     }
 
+    const matchedPreset = (typeof FIELD_BOSS_PRESETS !== 'undefined') ?
+      FIELD_BOSS_PRESETS.find(p => p.name.toLowerCase() === name.toLowerCase()) : null;
+
     const newTimer = {
       id: 'custom_' + Date.now(),
       name,
       location,
       cooldownMs,
-      respawnAt: Date.now() + cooldownMs
+      respawnAt: Date.now() + cooldownMs,
+      icon: matchedPreset ? matchedPreset.icon : '⚔️',
+      color: matchedPreset ? matchedPreset.color : '#f87171'
     };
 
     customTimers.push(newTimer);
@@ -714,6 +981,12 @@
   // =========================================================================
   const RADAR_RADIUS_PCT = 7.2; // ~54 meters in-game listening radius
 
+  function getCubeData() {
+    if (typeof window !== 'undefined' && window.CUBE_DATA) return window.CUBE_DATA;
+    if (typeof CUBE_DATA !== 'undefined') return CUBE_DATA;
+    return null;
+  }
+
   let activeZone = localStorage.getItem('aion2_cube_zone') || 'verteron';
   let cubesDisplayMode = 'map'; // 'map' | 'list'
   let foundCubes = JSON.parse(localStorage.getItem('aion2_found_cubes') || '{}');
@@ -722,6 +995,7 @@
   let isRadarActive = false;
   let activeRadarPing = null; // { x, y } in percent
   let activeSelectedPin = null;
+  let activeSelectedSpot = null;
 
   // Pan & Zoom state
   let mapScale = 0.5;
@@ -756,6 +1030,7 @@
 
   const mapViewport = document.getElementById('cube-map-viewport');
   const mapPlane = document.getElementById('cube-map-plane');
+  const mapTilesContainer = document.getElementById('cube-map-tiles');
   const mapImg = document.getElementById('cube-map-img');
   const mapRadarSvg = document.getElementById('cube-radar-svg');
   const mapPinsLayer = document.getElementById('cube-pins-layer');
@@ -779,8 +1054,26 @@
   const checklistSearchInput = document.getElementById('checklist-search-input');
   const cubesChecklistContainer = document.getElementById('cubes-checklist-container');
 
+  // Group expansion state
+  let expandedGroupId = null;
+  const cubeExpandedBar = document.getElementById('cube-expanded-bar');
+  const btnCollapseGroup = document.getElementById('btn-collapse-group');
+  const expandedGroupBadge = document.getElementById('expanded-group-badge');
+  const expandedGroupTitle = document.getElementById('expanded-group-title');
+  const expandedGroupSpotsCount = document.getElementById('expanded-group-spots-count');
+
   function initCubesHunter() {
-    if (!window.CUBE_DATA) return;
+    const cubeData = getCubeData();
+    if (!cubeData) {
+      console.warn('CUBE_DATA not yet ready, waiting...');
+      setTimeout(initCubesHunter, 100);
+      return;
+    }
+
+    // Collapse expanded group button
+    if (btnCollapseGroup) {
+      btnCollapseGroup.addEventListener('click', collapseGroup);
+    }
 
     // Zone selector buttons
     document.querySelectorAll('.zone-btn').forEach(btn => {
@@ -848,9 +1141,10 @@
     // Reset zone progress
     if (btnResetZoneCubes) {
       btnResetZoneCubes.addEventListener('click', () => {
-        const zoneName = CUBE_DATA.zones[activeZone]?.name || activeZone;
+        const cubeData = getCubeData();
+        const zoneName = cubeData?.zones[activeZone]?.name || activeZone;
         if (confirm(`Reset all marked cubes for ${zoneName}?`)) {
-          const zoneGroups = CUBE_DATA.zones[activeZone]?.groups || [];
+          const zoneGroups = cubeData?.zones[activeZone]?.groups || [];
           zoneGroups.forEach(g => {
             delete foundCubes[g.id];
           });
@@ -905,7 +1199,9 @@
     if (btnInspectorRadarHere) {
       btnInspectorRadarHere.addEventListener('click', () => {
         if (!activeSelectedPin) return;
-        triggerRadarPing(activeSelectedPin.x, activeSelectedPin.y);
+        const targetX = activeSelectedSpot ? activeSelectedSpot.x : activeSelectedPin.x;
+        const targetY = activeSelectedSpot ? activeSelectedSpot.y : activeSelectedPin.y;
+        triggerRadarPing(targetX, targetY);
       });
     }
 
@@ -917,7 +1213,12 @@
       btnZoomOut.addEventListener('click', () => zoomBy(0.8));
     }
     if (btnZoomFit) {
-      btnZoomFit.addEventListener('click', fitMapToViewport);
+      btnZoomFit.addEventListener('click', () => {
+        if (expandedGroupId) {
+          collapseGroup();
+        }
+        fitMapToViewport();
+      });
     }
 
     // Map Pan, Zoom & Interaction events
@@ -928,7 +1229,9 @@
   }
 
   function switchZone(zoneKey, isInitial = false) {
-    if (!CUBE_DATA.zones[zoneKey]) zoneKey = 'verteron';
+    const cubeData = getCubeData();
+    if (!cubeData) return;
+    if (!cubeData.zones[zoneKey]) zoneKey = 'verteron';
     activeZone = zoneKey;
     localStorage.setItem('aion2_cube_zone', activeZone);
 
@@ -936,10 +1239,15 @@
       btn.classList.toggle('active', btn.getAttribute('data-zone') === activeZone);
     });
 
-    const zoneData = CUBE_DATA.zones[activeZone];
+    const zoneData = cubeData.zones[activeZone];
     if (cubesZoneLabel) cubesZoneLabel.textContent = zoneData.name;
     if (mapImg) mapImg.src = zoneData.mapImage;
 
+    // Render 64 high-resolution map tiles (16,384 x 16,384 detail)
+    renderMapTiles(activeZone);
+
+    expandedGroupId = null;
+    if (cubeExpandedBar) cubeExpandedBar.classList.add('hidden');
     clearRadarPing();
     closeInspector();
 
@@ -947,6 +1255,26 @@
     fitMapToViewport();
     renderMapPins();
     renderChecklist();
+  }
+
+  function renderMapTiles(zoneKey) {
+    if (!mapTilesContainer) return;
+    mapTilesContainer.innerHTML = '';
+    const dir = `assets/maps/tiles/${zoneKey}`;
+    const fragment = document.createDocumentFragment();
+
+    for (let row = 0; row < 8; row++) {
+      for (let col = 0; col < 8; col++) {
+        const tileImg = document.createElement('img');
+        tileImg.className = 'map-tile';
+        tileImg.src = `${dir}/tile_${row}_${col}.webp`;
+        tileImg.style.left = `${col * 12.5}%`;
+        tileImg.style.top = `${row * 12.5}%`;
+        tileImg.draggable = false;
+        fragment.appendChild(tileImg);
+      }
+    }
+    mapTilesContainer.appendChild(fragment);
   }
 
   function setCubesDisplayMode(mode) {
@@ -974,10 +1302,11 @@
   }
 
   function updateCubesProgress() {
-    if (!window.CUBE_DATA) return;
+    const cubeData = getCubeData();
+    if (!cubeData) return;
 
-    const vGroups = CUBE_DATA.zones.verteron?.groups || [];
-    const aGroups = CUBE_DATA.zones.altgard?.groups || [];
+    const vGroups = cubeData.zones.verteron?.groups || [];
+    const aGroups = cubeData.zones.altgard?.groups || [];
 
     const vFound = vGroups.filter(g => foundCubes[g.id]).length;
     const aFound = aGroups.filter(g => foundCubes[g.id]).length;
@@ -1003,11 +1332,13 @@
     if (!mapViewport) return;
 
     mapViewport.addEventListener('mousedown', (e) => {
-      // Ignore clicks on inspectors, banners, zoom controls, or pins
+      // Ignore clicks on inspectors, banners, expanded bar, zoom controls, or pins
       if (e.target.closest('#cube-pin-inspector') ||
           e.target.closest('#cube-radar-banner') ||
+          e.target.closest('#cube-expanded-bar') ||
           e.target.closest('.map-zoom-controls') ||
-          e.target.closest('.cube-pin')) {
+          e.target.closest('.cube-pin') ||
+          e.target.closest('.cube-spot-pin')) {
         return;
       }
 
@@ -1044,7 +1375,12 @@
       // If it wasn't a drag, handle map click
       if (!mapHasDragged) {
         const target = e.target;
-        if (target.closest('#cube-pin-inspector') || target.closest('#cube-radar-banner') || target.closest('.map-zoom-controls')) {
+        if (target.closest('#cube-pin-inspector') ||
+            target.closest('#cube-radar-banner') ||
+            target.closest('#cube-expanded-bar') ||
+            target.closest('.map-zoom-controls') ||
+            target.closest('.cube-pin') ||
+            target.closest('.cube-spot-pin')) {
           return;
         }
 
@@ -1055,9 +1391,7 @@
           }
         } else {
           // Click on map empty background closes inspector
-          if (!target.closest('.cube-pin')) {
-            closeInspector();
-          }
+          closeInspector();
         }
       }
     });
@@ -1071,15 +1405,15 @@
       }
     });
 
-    // Wheel zoom around mouse pointer
+    // Wheel zoom around mouse pointer (supports deep zoom up to 30.0x)
     mapViewport.addEventListener('wheel', (e) => {
       e.preventDefault();
       const rect = mapViewport.getBoundingClientRect();
       const mouseX = e.clientX - rect.left;
       const mouseY = e.clientY - rect.top;
 
-      const zoomFactor = e.deltaY < 0 ? 1.15 : 0.87;
-      const newScale = Math.min(4.0, Math.max(0.35, mapScale * zoomFactor));
+      const zoomFactor = e.deltaY < 0 ? 1.25 : 0.8;
+      const newScale = Math.min(30.0, Math.max(0.35, mapScale * zoomFactor));
 
       // Zoom centered on cursor
       mapTranslateX = mouseX - (mouseX - mapTranslateX) * (newScale / mapScale);
@@ -1103,13 +1437,14 @@
     const clickXViewport = e.clientX - rect.left;
     const clickYViewport = e.clientY - rect.top;
 
-    const planeX = (clickXViewport - mapTranslateX) / mapScale;
-    const planeY = (clickYViewport - mapTranslateY) / mapScale;
+    const planeDim = 1000 * mapScale;
+    const planeX = clickXViewport - mapTranslateX;
+    const planeY = clickYViewport - mapTranslateY;
 
-    if (planeX >= 0 && planeX <= 1000 && planeY >= 0 && planeY <= 1000) {
+    if (planeX >= 0 && planeX <= planeDim && planeY >= 0 && planeY <= planeDim) {
       return {
-        pctX: (planeX / 1000) * 100,
-        pctY: (planeY / 1000) * 100
+        pctX: (planeX / planeDim) * 100,
+        pctY: (planeY / planeDim) * 100
       };
     }
     return null;
@@ -1117,7 +1452,13 @@
 
   function applyMapTransform() {
     if (mapPlane) {
-      mapPlane.style.transform = `translate(${mapTranslateX}px, ${mapTranslateY}px) scale(${mapScale})`;
+      // Set actual layout dimensions (NO scale() in CSS transform!)
+      // This forces Chromium to render the 16,384x16,384 tiles and DOM text at 100% native monitor resolution,
+      // completely eliminating the blur-when-idle bug!
+      const planeDim = Math.round(1000 * mapScale);
+      mapPlane.style.width = `${planeDim}px`;
+      mapPlane.style.height = `${planeDim}px`;
+      mapPlane.style.transform = `translate(${mapTranslateX}px, ${mapTranslateY}px)`;
     }
   }
 
@@ -1137,7 +1478,7 @@
     const vw = mapViewport.clientWidth / 2;
     const vh = mapViewport.clientHeight / 2;
 
-    const newScale = Math.min(4.0, Math.max(0.35, mapScale * factor));
+    const newScale = Math.min(30.0, Math.max(0.35, mapScale * factor));
     mapTranslateX = vw - (vw - mapTranslateX) * (newScale / mapScale);
     mapTranslateY = vh - (vh - mapTranslateY) * (newScale / mapScale);
     mapScale = newScale;
@@ -1147,30 +1488,73 @@
   function focusOnPin(pin) {
     if (!mapViewport) return;
     setCubesDisplayMode('map');
+    expandGroup(pin);
+  }
 
-    const vw = mapViewport.clientWidth || 460;
-    const vh = mapViewport.clientHeight || 480;
+  function expandGroup(pin) {
+    if (!pin) return;
+    expandedGroupId = pin.id;
 
-    mapScale = 1.85; // Close-up view
-    const pinPxX = (pin.x / 100) * 1000;
-    const pinPxY = (pin.y / 100) * 1000;
+    if (cubeExpandedBar) {
+      if (expandedGroupBadge) expandedGroupBadge.textContent = pin.group;
+      if (expandedGroupTitle) expandedGroupTitle.textContent = pin.area;
+      const count = pin.spots ? pin.spots.length : pin.count;
+      if (expandedGroupSpotsCount) expandedGroupSpotsCount.textContent = `(${count} Possible Spawn Locations)`;
+      cubeExpandedBar.classList.remove('hidden');
+    }
 
-    mapTranslateX = (vw / 2) - (pinPxX * mapScale);
-    mapTranslateY = (vh / 2) - (pinPxY * mapScale);
-    applyMapTransform();
+    if (mapViewport) {
+      const vw = mapViewport.clientWidth || 460;
+      const vh = mapViewport.clientHeight || 480;
 
+      // Calculate bounding box of spots to choose optimal close-up zoom scale
+      let targetScale = 6.5;
+      if (pin.spots && pin.spots.length > 0) {
+        let minX = 100, maxX = 0, minY = 100, maxY = 0;
+        pin.spots.forEach(s => {
+          if (s.x < minX) minX = s.x;
+          if (s.x > maxX) maxX = s.x;
+          if (s.y < minY) minY = s.y;
+          if (s.y > maxY) maxY = s.y;
+        });
+        const spanX = Math.max(0.3, maxX - minX);
+        const spanY = Math.max(0.3, maxY - minY);
+        const maxSpan = Math.max(spanX, spanY);
+        targetScale = Math.min(16.0, Math.max(5.5, 30.0 / maxSpan));
+      }
+
+      mapScale = targetScale;
+      const planeDim = 1000 * mapScale;
+      const pinPlanePxX = (pin.x / 100) * planeDim;
+      const pinPlanePxY = (pin.y / 100) * planeDim;
+
+      mapTranslateX = (vw / 2) - pinPlanePxX;
+      mapTranslateY = (vh / 2) - pinPlanePxY;
+      applyMapTransform();
+    }
+
+    renderMapPins();
     openInspector(pin);
+  }
+
+  function collapseGroup() {
+    expandedGroupId = null;
+    if (cubeExpandedBar) cubeExpandedBar.classList.add('hidden');
+    closeInspector();
+    renderMapPins();
   }
 
   // Render Map Pins
   function renderMapPins() {
-    if (!mapPinsLayer || !window.CUBE_DATA) return;
+    const cubeData = getCubeData();
+    if (!mapPinsLayer || !cubeData) return;
     mapPinsLayer.innerHTML = '';
 
-    const zoneData = CUBE_DATA.zones[activeZone];
+    const zoneData = cubeData.zones[activeZone];
     if (!zoneData) return;
 
     const groups = zoneData.groups || [];
+    const expandedGroup = expandedGroupId ? groups.find(g => g.id === expandedGroupId) : null;
 
     groups.forEach(pin => {
       const isFound = !!foundCubes[pin.id];
@@ -1184,6 +1568,58 @@
 
       if (!matchesSearch || !matchesFilter) return;
 
+      // When an area group is expanded
+      if (expandedGroup) {
+        if (pin.id === expandedGroup.id) {
+          // Render individual spots
+          const spots = pin.spots || [];
+          spots.forEach((spot, idx) => {
+            const spotEl = document.createElement('div');
+            spotEl.className = 'cube-spot-pin';
+            if (isFound) spotEl.classList.add('found');
+            spotEl.style.left = `${spot.x}%`;
+            spotEl.style.top = `${spot.y}%`;
+
+            const terrainClass = (spot.terrain && spot.terrain.toLowerCase().includes('water')) ? 'water' : 'ground';
+            const keyBadge = spot.keyRequired ? '<span class="spot-key-icon" title="Key Required">🔑</span>' : '';
+            const spotNum = spot.num || (spot.id ? (spot.id.split('_spot_')[1] || (idx + 1)) : (idx + 1));
+
+            spotEl.title = `Group ${pin.group} - Spot #${spotNum} (${spot.terrain || 'Ground'}${spot.keyRequired ? ', Key Required' : ''})`;
+
+            spotEl.innerHTML = `
+              <div class="spot-badge ${terrainClass}">
+                <span>${spotNum}</span>
+              </div>
+              ${keyBadge}
+            `;
+
+            spotEl.addEventListener('click', (e) => {
+              e.stopPropagation();
+              openSpotInspector(pin, spot, spotNum);
+            });
+
+            mapPinsLayer.appendChild(spotEl);
+          });
+          return;
+        } else {
+          // Dim other area groups in background
+          const pinEl = document.createElement('div');
+          pinEl.className = 'cube-pin dimmed';
+          pinEl.setAttribute('data-id', pin.id);
+          pinEl.style.left = `${pin.x}%`;
+          pinEl.style.top = `${pin.y}%`;
+          pinEl.innerHTML = `
+            <div class="pin-badge">
+              <span class="pin-letter">${pin.group}</span>
+              <span class="pin-count">${pin.count}</span>
+            </div>
+          `;
+          mapPinsLayer.appendChild(pinEl);
+          return;
+        }
+      }
+
+      // Default Overview Mode: Render group cluster pins
       const pinEl = document.createElement('div');
       pinEl.className = 'cube-pin';
       pinEl.setAttribute('data-id', pin.id);
@@ -1209,7 +1645,7 @@
 
       pinEl.addEventListener('click', (e) => {
         e.stopPropagation();
-        openInspector(pin);
+        expandGroup(pin);
       });
 
       mapPinsLayer.appendChild(pinEl);
@@ -1222,7 +1658,8 @@
 
     playRadarSonarChime();
 
-    const zoneData = CUBE_DATA.zones[activeZone];
+    const cubeData = getCubeData();
+    const zoneData = cubeData?.zones[activeZone];
     const groups = zoneData?.groups || [];
 
     // Calculate candidate spawns within listening distance
@@ -1336,15 +1773,34 @@
     }
   }
 
-  // Pin Inspector Popover
+  // Pin & Spot Inspector Popover
   function openInspector(pin) {
     activeSelectedPin = pin;
+    activeSelectedSpot = null;
     if (!cubePinInspector) return;
 
     if (inspectorGroupCode) inspectorGroupCode.textContent = pin.group;
     if (inspectorAreaName) inspectorAreaName.textContent = pin.area;
-    if (inspectorSpawnCount) inspectorSpawnCount.textContent = `${pin.count} possible spawn spots`;
+    const count = pin.spots ? pin.spots.length : pin.count;
+    if (inspectorSpawnCount) inspectorSpawnCount.textContent = `${count} possible spawn spots`;
     if (inspectorCoordsVal) inspectorCoordsVal.textContent = `${pin.x.toFixed(1)}%, ${pin.y.toFixed(1)}%`;
+
+    updateInspectorState(pin);
+    cubePinInspector.classList.remove('hidden');
+  }
+
+  function openSpotInspector(pin, spot, spotNum) {
+    activeSelectedPin = pin;
+    activeSelectedSpot = spot;
+    if (!cubePinInspector) return;
+
+    const num = spot.num || spotNum || (spot.id ? (spot.id.split('_spot_')[1] || 1) : 1);
+    if (inspectorGroupCode) inspectorGroupCode.textContent = `${pin.group} #${num}`;
+    if (inspectorAreaName) inspectorAreaName.textContent = pin.area;
+    const terrain = spot.terrain || 'Ground';
+    const keyText = spot.keyRequired ? ' • 🔑 Key Required' : ' • No Key';
+    if (inspectorSpawnCount) inspectorSpawnCount.textContent = `Spot #${num} (${terrain}${keyText})`;
+    if (inspectorCoordsVal) inspectorCoordsVal.textContent = `${spot.x.toFixed(1)}%, ${spot.y.toFixed(1)}%`;
 
     updateInspectorState(pin);
     cubePinInspector.classList.remove('hidden');
@@ -1365,15 +1821,17 @@
 
   function closeInspector() {
     activeSelectedPin = null;
+    activeSelectedSpot = null;
     if (cubePinInspector) cubePinInspector.classList.add('hidden');
   }
 
   // Checklist View Renderer
   function renderChecklist() {
-    if (!cubesChecklistContainer || !window.CUBE_DATA) return;
+    const cubeData = getCubeData();
+    if (!cubesChecklistContainer || !cubeData) return;
     cubesChecklistContainer.innerHTML = '';
 
-    const zoneData = CUBE_DATA.zones[activeZone];
+    const zoneData = cubeData.zones[activeZone];
     if (!zoneData) return;
 
     const groups = zoneData.groups || [];
@@ -1402,6 +1860,7 @@
 
     filtered.forEach(pin => {
       const isFound = !!foundCubes[pin.id];
+      const count = pin.spots ? pin.spots.length : pin.count;
       const card = document.createElement('div');
       card.className = `checklist-card ${isFound ? 'is-found' : ''}`;
       card.setAttribute('data-id', pin.id);
@@ -1412,10 +1871,11 @@
           <div class="checklist-group-badge">${pin.group}</div>
           <div class="checklist-info">
             <span class="checklist-area">${pin.area}</span>
-            <span class="checklist-meta"><strong>${pin.count} spots</strong> • (${pin.x.toFixed(1)}%, ${pin.y.toFixed(1)}%)</span>
+            <span class="checklist-meta"><strong>${count} spots</strong> • (${pin.x.toFixed(1)}%, ${pin.y.toFixed(1)}%)</span>
           </div>
         </div>
         <div class="checklist-actions">
+          <button class="hud-btn-mini btn-expand-spots" title="Expand all ${count} spawn spots on map">🔍 Spots (${count})</button>
           <button class="hud-btn-mini btn-view-on-map" title="View pin on map">📍 Map</button>
         </div>
       `;
@@ -1437,6 +1897,14 @@
           updateInspectorState(pin);
         }
       });
+
+      // Expand spots listener
+      const btnExpand = card.querySelector('.btn-expand-spots');
+      if (btnExpand) {
+        btnExpand.addEventListener('click', () => {
+          focusOnPin(pin);
+        });
+      }
 
       // View on map button listener
       const btnMap = card.querySelector('.btn-view-on-map');
