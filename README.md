@@ -40,6 +40,18 @@ An always-on-top, transparent HUD overlay for **AION 2** that tracks world bosse
   - Click `+ Custom Boss` or `Reset Cooldown` to track field bosses (Queen Ant, King Chiton, etc.) when slain.
 - **Compact HUD Mode**:
   - Click `⤢` to collapse the overlay into a sleek mini status bar showing just the next upcoming event.
+- **📦 Hidden Cubes Hunter Tab (Corpus.gg Companion)**:
+  - **Offline High-Res Maps**: Built-in 2048x2048 interactive game maps for **Verteron (Elyos)** and **Altgard (Asmodian)**. Works completely offline with zero external network lag!
+  - **All 154 Cube Spawn Groups Tracked**: 95 Verteron groups and 59 Altgard groups with exact percentage coordinates and potential spawn spot counts (10 to 20 spots per group).
+  - **🎧 Acoustic Sound Guide (Detection Radar)**:
+    - Click anywhere on the map (or right-click) with Sound Radar active to simulate in-game cube audio detection.
+    - Accurately checks candidate spawn groups within hearing distance (~50m-55m) and renders an animated sonar wave with connecting detection rays and clickable jump chips.
+  - **Interactive Checklist & Map Sync**:
+    - Mark cubes as found/unfound from the map pin inspector or from the checklist.
+    - Search by landmark name (e.g. *Altamia Canyon*, *Pilgrim's Rest*, *Moslan Forest*) or group code.
+    - Progress bars and completion stats are automatically saved in local storage.
+  - **Smooth Pan & Zoom Controls**:
+    - Mouse drag to pan, wheel scroll to zoom centered on your cursor, plus mini zoom HUD buttons.
 - **Configurable Styling**:
   - Sliders for normal opacity and in-game ghost mode opacity.
 

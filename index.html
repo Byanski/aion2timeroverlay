@@ -44,8 +44,23 @@
       👻 Click-Through Active (Ghost Mode) — Press <b>F10</b> to Unlock
     </div>
 
-    <!-- Time & Region Bar -->
-    <div class="time-bar">
+    <!-- Main Top Mode Navigation Bar -->
+    <nav class="mode-nav">
+      <button id="btn-mode-timers" class="mode-nav-btn active">
+        <span class="mode-icon">⏱️</span>
+        <span>World Timers</span>
+      </button>
+      <button id="btn-mode-cubes" class="mode-nav-btn">
+        <span class="mode-icon">📦</span>
+        <span>Hidden Cubes Map</span>
+        <span id="nav-cubes-badge" class="mode-pill-badge">0/154</span>
+      </button>
+    </nav>
+
+    <!-- Tab 1: World Timers View -->
+    <div id="view-timers" class="tab-view active">
+      <!-- Time & Region Bar -->
+      <div class="time-bar">
       <div class="time-item">
         <span class="time-label">Local PC Time</span>
         <span id="local-time-clock" class="time-value">--:--:--</span>
@@ -107,12 +122,147 @@
       <button id="btn-add-custom-timer" class="hud-btn" style="white-space:nowrap;" title="Add Custom Boss Respawn Timer">
         + Custom Boss
       </button>
-    </div>
-
     <!-- Scrollable Events List -->
     <div id="events-list" class="events-list">
       <!-- Event cards will be dynamically rendered here -->
     </div>
+  </div>
+  <!-- End of #view-timers -->
+
+    <!-- Tab 2: Hidden Cubes Hunting View -->
+    <div id="view-cubes" class="tab-view hidden">
+      <!-- Zone Selector & View Mode Sub-Bar -->
+      <div class="cubes-header-bar">
+        <div class="zone-selector">
+          <button class="zone-btn active" data-zone="verteron">
+            <span class="faction-icon">🌿</span>
+            <span>Verteron (Elyos)</span>
+          </button>
+          <button class="zone-btn" data-zone="altgard">
+            <span class="faction-icon">❄️</span>
+            <span>Altgard (Asmodian)</span>
+          </button>
+        </div>
+        <div class="cubes-subtab-group">
+          <button id="btn-cubes-view-map" class="cubes-subtab-btn active" title="Interactive Map">🗺️ Map</button>
+          <button id="btn-cubes-view-list" class="cubes-subtab-btn" title="Cube Checklist">📋 List</button>
+        </div>
+      </div>
+
+      <!-- Zone Progress Bar & Stats -->
+      <div class="cubes-progress-card">
+        <div class="progress-stats-row">
+          <div class="progress-text-group">
+            <span class="progress-zone-name" id="cubes-zone-label">Verteron</span>
+            <span class="progress-ratio">
+              Found: <strong id="cubes-found-count">0</strong> / <span id="cubes-total-count">95</span>
+              (<span id="cubes-percentage">0%</span>)
+            </span>
+          </div>
+          <div class="progress-actions">
+            <button id="btn-reset-zone-cubes" class="hud-btn-mini danger" title="Reset marked cubes in current zone">↺ Reset</button>
+          </div>
+        </div>
+        <div class="progress-bar-container" style="margin-top:5px; height: 5px;">
+          <div id="cubes-progress-fill" class="progress-bar-fill" style="width: 0%; background: linear-gradient(90deg, #38bdf8, #34d399);"></div>
+        </div>
+      </div>
+
+      <!-- Map Mode Section -->
+      <div id="cubes-map-section" class="cubes-display-section active">
+        <!-- Map Controls & Filters Toolbar -->
+        <div class="cubes-toolbar">
+          <button id="btn-radar-toggle" class="radar-btn" title="Acoustic Sound Guide: Click anywhere on map to detect candidate cubes within hearing distance (~50m)">
+            <span class="radar-pulse-dot"></span>
+            <span id="radar-btn-text">🎧 Sound Radar</span>
+          </button>
+
+          <input type="text" id="cube-map-search" class="search-input-sm" placeholder="🔍 Search area (e.g. Canyon)...">
+
+          <div class="cube-filter-pills">
+            <button class="cube-filter-btn active" data-filter="all">All</button>
+            <button class="cube-filter-btn" data-filter="unfound">Unfound</button>
+            <button class="cube-filter-btn" data-filter="found">Found</button>
+          </div>
+
+          <div class="map-zoom-controls">
+            <button id="btn-zoom-in" class="hud-btn-mini" title="Zoom In">+</button>
+            <button id="btn-zoom-out" class="hud-btn-mini" title="Zoom Out">−</button>
+            <button id="btn-zoom-fit" class="hud-btn-mini" title="Fit Map">⟲</button>
+            <button id="btn-clear-radar" class="hud-btn-mini" title="Clear radar ping">✕</button>
+          </div>
+        </div>
+
+        <!-- Interactive Map Viewport -->
+        <div id="cube-map-viewport" class="map-viewport">
+          <div id="cube-map-plane" class="map-plane">
+            <img id="cube-map-img" class="map-image" src="assets/maps/verteron.webp" alt="Zone Map" draggable="false">
+            
+            <!-- Radar SVG overlay for acoustic circles and detection rays -->
+            <svg id="cube-radar-svg" class="map-radar-svg" viewBox="0 0 1000 1000"></svg>
+            
+            <!-- Pins container layer -->
+            <div id="cube-pins-layer" class="map-pins-layer"></div>
+          </div>
+
+          <!-- Radar detection notification banner -->
+          <div id="cube-radar-banner" class="cube-radar-banner hidden">
+            <div class="radar-banner-header">
+              <span class="radar-banner-icon">🎧</span>
+              <span id="radar-banner-title" class="radar-banner-title">Sound Radar Active</span>
+              <button id="btn-close-radar-banner" class="hud-btn-mini">✕</button>
+            </div>
+            <div id="radar-banner-list" class="radar-banner-list"></div>
+          </div>
+
+          <!-- Map Popover / Pin Inspector Card -->
+          <div id="cube-pin-inspector" class="pin-inspector hidden">
+            <div class="pin-inspector-header">
+              <span id="inspector-group-code" class="inspector-badge">A</span>
+              <div class="inspector-titles">
+                <div id="inspector-area-name" class="inspector-area">Altamia Canyon</div>
+                <div id="inspector-spawn-count" class="inspector-count">10 possible spawn spots</div>
+              </div>
+              <button id="btn-close-inspector" class="hud-btn-mini">✕</button>
+            </div>
+            <div class="inspector-coords">
+              <span>📍 Coordinates:</span>
+              <span id="inspector-coords-val" class="highlight">58.7%, 62.0%</span>
+            </div>
+            <div class="inspector-actions">
+              <button id="btn-inspector-toggle-found" class="hud-btn-sm toggle-found-btn">
+                <span id="inspector-found-icon">✓</span>
+                <span id="inspector-found-label">Mark as Found</span>
+              </button>
+              <button id="btn-inspector-radar-here" class="hud-btn-sm" title="Drop sound radar listening circle at this spawn group">
+                <span>🎧 Radar Ping Here</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Map Navigation Tip Helper -->
+          <div class="map-tips-overlay">
+            <span>🖱️ Drag to Pan • ⚙️ Scroll to Zoom • 🎧 Click with Sound Radar to detect cubes</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Checklist Mode Section -->
+      <div id="cubes-checklist-section" class="cubes-display-section hidden">
+        <div class="checklist-toolbar">
+          <input type="text" id="checklist-search-input" class="search-input" placeholder="🔍 Search landmark area or group (e.g. Canyon, A)...">
+          <div class="cube-filter-pills">
+            <button class="checklist-filter-btn active" data-filter="all">All</button>
+            <button class="checklist-filter-btn" data-filter="unfound">Unfound</button>
+            <button class="checklist-filter-btn" data-filter="found">Found</button>
+          </div>
+        </div>
+        <div id="cubes-checklist-container" class="cubes-checklist-container">
+          <!-- Rendered dynamically -->
+        </div>
+      </div>
+    </div>
+    <!-- End of #view-cubes -->
 
     <!-- Settings Flyout Drawer -->
     <div id="settings-drawer">
@@ -205,6 +355,7 @@
   </div>
 
   <script src="timers-data.js"></script>
+  <script src="cubes-data.js"></script>
   <script src="sound-synth.js"></script>
   <script src="app.js"></script>
 </body>

@@ -1,7 +1,7 @@
 {
   "name": "aion2-timer-overlay",
-  "version": "1.0.0",
-  "description": "In-Game Always-On-Top HUD Overlay for AION 2 Event and Boss Timers",
+  "version": "1.1.0",
+  "description": "In-Game Always-On-Top HUD Overlay for AION 2 Event Timers and Hidden Cubes Hunter",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -37,6 +37,8 @@
       "app.js",
       "sound-synth.js",
       "timers-data.js",
+      "cubes-data.js",
+      "assets/**/*",
       "package.json"
     ]
   },
