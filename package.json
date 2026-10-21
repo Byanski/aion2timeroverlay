@@ -1,0 +1,21 @@
+{
+  "name": "aion2-timer-overlay",
+  "version": "1.0.0",
+  "description": "In-Game Always-On-Top HUD Overlay for AION 2 Event and Boss Timers",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "keywords": [
+    "aion2",
+    "overlay",
+    "timers",
+    "bosses",
+    "gaming"
+  ],
+  "author": "Antigravity",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^44.9.2"
+  }
+}

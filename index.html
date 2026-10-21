@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AION 2 // In-Game World Timers</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="overlay-container">
+    <!-- Draggable Header -->
+    <header class="app-header">
+      <div class="brand-section">
+        <span class="brand-logo">✨</span>
+        <span class="brand-title">AION 2 // TIMERS</span>
+      </div>
+      <div class="window-controls">
+        <!-- Click-Through Ghost Mode Button -->
+        <button id="btn-ghost-toggle" class="hud-btn" title="Toggle Click-Through Mode (Hotkey: F10 or Ctrl+Shift+X)">
+          <span id="ghost-icon">🔓</span>
+          <span style="font-size:10px; margin-left:2px;">F10</span>
+        </button>
+        <!-- Compact Mode Toggle -->
+        <button id="btn-compact-toggle" class="hud-btn" title="Toggle Compact HUD Mode">
+          <span id="compact-icon">⤢</span>
+        </button>
+        <!-- Settings Drawer Toggle -->
+        <button id="btn-settings-toggle" class="hud-btn" title="Overlay Settings">
+          <span>⚙️</span>
+        </button>
+        <!-- Minimize Window -->
+        <button id="btn-minimize" class="hud-btn" title="Minimize">
+          <span>—</span>
+        </button>
+        <!-- Close Window -->
+        <button id="btn-close" class="hud-btn danger" title="Close Overlay">
+          <span>✕</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Ghost Mode Notice -->
+    <div id="ghost-mode-banner">
+      👻 Click-Through Active (Ghost Mode) — Press <b>F10</b> to Unlock
+    </div>
+
+    <!-- Time & Region Bar -->
+    <div class="time-bar">
+      <div class="time-item">
+        <span class="time-label">Local PC Time</span>
+        <span id="local-time-clock" class="time-value">--:--:--</span>
+      </div>
+      <div class="time-item" style="align-items: flex-end;">
+        <span class="time-label">Server Region</span>
+        <select id="server-region-select" class="region-select">
+          <option value="NA_EAST" selected>US East (NA - EDT/EST)</option>
+          <option value="NA_WEST">US West (NA - PDT/PST)</option>
+          <option value="EU">Europe (EU - CEST/CET)</option>
+          <option value="KR">Korea (KR - KST / UTC+9)</option>
+          <option value="TW">Taiwan (TW - CST / UTC+8)</option>
+          <option value="UTC">UTC (UTC+0)</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Hero "Next Up" Banner -->
+    <div id="next-up-card" class="next-up-card">
+      <div class="next-up-header">
+        <span class="next-up-badge">⚡ NEXT UPCOMING</span>
+        <span id="next-up-countdown" class="next-up-countdown">--:--:--</span>
+      </div>
+      <div id="next-up-title" class="next-up-title">
+        <span id="next-up-icon">⏳</span>
+        <span id="next-up-name">Loading Next Event...</span>
+      </div>
+      <div class="next-up-details">
+        <div class="next-up-row">
+          <span>🕒</span>
+          <span class="label">Local Time:</span>
+          <span id="next-up-meta" class="val highlight">--:--</span>
+        </div>
+        <div class="next-up-row">
+          <span>📍</span>
+          <span class="label">Location:</span>
+          <span id="next-up-location" class="val">--</span>
+        </div>
+      </div>
+      <div class="progress-bar-container" style="margin-top:6px;">
+        <div id="next-up-progress-fill" class="progress-bar-fill" style="width: 0%;"></div>
+      </div>
+    </div>
+
+    <!-- Category Tabs -->
+    <div class="filter-tabs">
+      <button class="tab-btn active" data-tab="all">All Events</button>
+      <button class="tab-btn" data-tab="boss">World Bosses</button>
+      <button class="tab-btn" data-tab="rift">Rifts & Invasions</button>
+      <button class="tab-btn" data-tab="siege">Sieges</button>
+      <button class="tab-btn" data-tab="event">Events</button>
+      <button class="tab-btn" data-tab="reset">Resets</button>
+      <button class="tab-btn" data-tab="custom">Field Timers</button>
+    </div>
+
+    <!-- Search & Quick Action Bar -->
+    <div class="search-action-bar">
+      <input type="text" id="search-input" class="search-input" placeholder="🔍 Search bosses, rifts, zones...">
+      <button id="btn-add-custom-timer" class="hud-btn" style="white-space:nowrap;" title="Add Custom Boss Respawn Timer">
+        + Custom Boss
+      </button>
+    </div>
+
+    <!-- Scrollable Events List -->
+    <div id="events-list" class="events-list">
+      <!-- Event cards will be dynamically rendered here -->
+    </div>
+
+    <!-- Settings Flyout Drawer -->
+    <div id="settings-drawer">
+      <div class="settings-header">
+        <span class="settings-title">OVERLAY CONFIGURATION</span>
+        <button id="btn-close-settings" class="hud-btn">✕ Close</button>
+      </div>
+
+      <div class="settings-row">
+        <span>Normal Window Opacity</span>
+        <input type="range" id="slider-opacity" class="settings-slider" min="30" max="100" value="90">
+      </div>
+
+      <div class="settings-row">
+        <span>F10 Ghost Mode Opacity</span>
+        <input type="range" id="slider-ghost-opacity" class="settings-slider" min="15" max="80" value="40">
+      </div>
+
+      <div class="settings-row">
+        <span>Audio Alerts Volume</span>
+        <input type="range" id="slider-volume" class="settings-slider" min="0" max="100" value="70">
+      </div>
+
+      <div class="settings-row">
+        <span>Sound Notifications</span>
+        <button id="btn-toggle-sound" class="hud-btn active">🔊 Enabled</button>
+      </div>
+
+      <div class="settings-row">
+        <span>Test Audio Chime</span>
+        <button id="btn-test-sound" class="hud-btn">🔔 Play Chime</button>
+      </div>
+
+      <div class="settings-row">
+        <span>5-Minute Warning Chime</span>
+        <input type="checkbox" id="chk-alert-5m" checked style="cursor:pointer;">
+      </div>
+
+      <div class="settings-row">
+        <span>1-Minute Warning Chime</span>
+        <input type="checkbox" id="chk-alert-1m" checked style="cursor:pointer;">
+      </div>
+
+      <div class="settings-row">
+        <span>Spawn / Start Fanfare</span>
+        <input type="checkbox" id="chk-alert-spawn" checked style="cursor:pointer;">
+      </div>
+
+      <div class="settings-row">
+        <span>Always On Top</span>
+        <input type="checkbox" id="chk-always-on-top" checked style="cursor:pointer;">
+      </div>
+
+      <div class="shortcut-box">
+        <div style="font-weight:700; color:var(--text-main); margin-bottom:2px;">🎮 Hotkey Cheatsheet</div>
+        <div><span class="kbd">F10</span> or <span class="kbd">Ctrl+Shift+X</span>: Toggle Click-Through Ghost Mode (Pass clicks into AION 2)</div>
+        <div><span class="kbd">Ctrl+Shift+H</span>: Hide / Show Overlay Window</div>
+      </div>
+    </div>
+
+    <!-- Custom Boss Modal -->
+    <div id="modal-custom-boss" class="hidden">
+      <div class="modal-content">
+        <div class="modal-title">⏱️ Add Boss Respawn Timer</div>
+        <div>
+          <label style="font-size:10px; color:var(--text-dim);">Boss Name:</label>
+          <input type="text" id="custom-boss-name" class="modal-input" placeholder="e.g. Queen Ant" style="width:100%; margin-top:2px;">
+        </div>
+        <div>
+          <label style="font-size:10px; color:var(--text-dim);">Location / Notes (optional):</label>
+          <input type="text" id="custom-boss-loc" class="modal-input" placeholder="e.g. The Hive - Lower Level" style="width:100%; margin-top:2px;">
+        </div>
+        <div style="display:flex; gap:8px;">
+          <div style="flex:1;">
+            <label style="font-size:10px; color:var(--text-dim);">Cooldown Hours:</label>
+            <input type="number" id="custom-boss-hours" class="modal-input" value="2" min="0" max="72" style="width:100%; margin-top:2px;">
+          </div>
+          <div style="flex:1;">
+            <label style="font-size:10px; color:var(--text-dim);">Cooldown Minutes:</label>
+            <input type="number" id="custom-boss-mins" class="modal-input" value="0" min="0" max="59" style="width:100%; margin-top:2px;">
+          </div>
+        </div>
+        <div style="display:flex; justify-content:flex-end; gap:6px; margin-top:8px;">
+          <button id="btn-cancel-custom" class="hud-btn">Cancel</button>
+          <button id="btn-save-custom" class="hud-btn active">Start Countdown</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="timers-data.js"></script>
+  <script src="sound-synth.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
