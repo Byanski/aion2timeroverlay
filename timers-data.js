@@ -58,7 +58,8 @@ const SCHEDULED_EVENTS = [
     icon: '⚔️',
     color: '#f59e0b',
     durationMinutes: 30,
-    // Daily every 3 hours starting at 01:00 server time (1, 4, 7, 10, 13, 16, 19, 22)
+    timeBasis: 'utc',
+    // Global UTC schedule: every 3 hours starting at 01:00 UTC (1, 4, 7, 10, 13, 16, 19, 22)
     recurrence: {
       type: 'fixed_hours',
       hours: [1, 4, 7, 10, 13, 16, 19, 22],
@@ -75,6 +76,7 @@ const SCHEDULED_EVENTS = [
     icon: '👑',
     color: '#ef4444',
     durationMinutes: 45,
+    timeBasis: 'server',
     // Fridays (5) and Sundays (0) at 21:00 server time
     recurrence: {
       type: 'weekly_days',
@@ -93,6 +95,7 @@ const SCHEDULED_EVENTS = [
     icon: '🗡️',
     color: '#ec4899',
     durationMinutes: 30,
+    timeBasis: 'server',
     // Mondays (1), Thursdays (4), Saturdays (6) at 21:30 server time
     recurrence: {
       type: 'weekly_days',
@@ -112,7 +115,8 @@ const SCHEDULED_EVENTS = [
     color: '#8b5cf6',
     durationMinutes: 10, // 10 min portal opening window
     fullDurationMinutes: 60,
-    // Every 3 hours on the hour starting at 00:00 server time (0, 3, 6, 9, 12, 15, 18, 21)
+    timeBasis: 'utc',
+    // Global UTC schedule: Every 3 hours on the hour (0, 3, 6, 9, 12, 15, 18, 21 UTC)
     recurrence: {
       type: 'fixed_hours',
       hours: [0, 3, 6, 9, 12, 15, 18, 21],

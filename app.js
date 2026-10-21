@@ -248,171 +248,77 @@
 
   // Calculate next spawn timestamp (in local machine UTC time)
   function getNextOccurrence(event, now = new Date()) {
+    const isUtc = event.timeBasis === 'utc';
     const offsetHours = (typeof getRegionOffsetHours === 'function')
       ? getRegionOffsetHours(currentRegion, now)
       : (REGIONS[currentRegion] && REGIONS[currentRegion].offsetHours !== undefined ? REGIONS[currentRegion].offsetHours : 0);
     const serverOffsetMs = offsetHours * 3600 * 1000;
-    const rec = event.recurrence;
 
-    // Current time shifted to server time
     const nowUtcMs = now.getTime();
-    const serverNowMs = nowUtcMs + serverOffsetMs;
-    const serverDate = new Date(serverNowMs);
+    const refMs = isUtc ? nowUtcMs : (nowUtcMs + serverOffsetMs);
+    const refDate = new Date(refMs);
 
-    let nextServerDate = null;
-    let isActive = false;
-    let activeRemainingMs = 0;
+    const rec = event.recurrence;
+    const portalDurationMs = (event.durationMinutes || 15) * 60 * 1000;
 
-    const eventDurationMs = (event.durationMinutes || 15) * 60 * 1000;
-
+    const candidates = [];
     if (rec.type === 'fixed_hours') {
-      // Find candidate hours today or tomorrow in server time
-      const candidates = [];
-      for (let dayOffset = 0; dayOffset <= 2; dayOffset++) {
+      for (let d = -1; d <= 2; d++) {
         for (const h of rec.hours) {
-          const candidate = new Date(Date.UTC(
-            serverDate.getUTCFullYear(),
-            serverDate.getUTCMonth(),
-            serverDate.getUTCDate() + dayOffset,
-            h,
-            rec.minute || 0,
-            0,
-            0
-          ));
-          candidates.push(candidate);
-        }
-      }
-
-      // Check if one is currently active
-      for (const cand of candidates) {
-        const candServerMs = cand.getTime();
-        if (serverNowMs >= candServerMs && serverNowMs < candServerMs + eventDurationMs) {
-          isActive = true;
-          activeRemainingMs = (candServerMs + eventDurationMs) - serverNowMs;
-          nextServerDate = cand;
-          break;
-        }
-      }
-
-      if (!isActive) {
-        // Find first candidate in future
-        for (const cand of candidates) {
-          if (cand.getTime() > serverNowMs) {
-            nextServerDate = cand;
-            break;
-          }
+          const candMs = Date.UTC(refDate.getUTCFullYear(), refDate.getUTCMonth(), refDate.getUTCDate() + d, h, rec.minute || 0, 0, 0);
+          const candLocalMs = isUtc ? candMs : (candMs - serverOffsetMs);
+          candidates.push(candLocalMs);
         }
       }
     } else if (rec.type === 'hourly') {
-      const targetMin = rec.minute || 0;
-      // Candidate: this hour or next hour
-      let cand = new Date(Date.UTC(
-        serverDate.getUTCFullYear(),
-        serverDate.getUTCMonth(),
-        serverDate.getUTCDate(),
-        serverDate.getUTCHours(),
-        targetMin,
-        0,
-        0
-      ));
-
-      if (serverNowMs >= cand.getTime() && serverNowMs < cand.getTime() + eventDurationMs) {
-        isActive = true;
-        activeRemainingMs = (cand.getTime() + eventDurationMs) - serverNowMs;
-        nextServerDate = cand;
-      } else if (cand.getTime() > serverNowMs) {
-        nextServerDate = cand;
-      } else {
-        // Next hour
-        nextServerDate = new Date(cand.getTime() + 3600 * 1000);
+      for (let hOffset = -1; hOffset <= 3; hOffset++) {
+        const candMs = Date.UTC(refDate.getUTCFullYear(), refDate.getUTCMonth(), refDate.getUTCDate(), refDate.getUTCHours() + hOffset, rec.minute || 0, 0, 0);
+        const candLocalMs = isUtc ? candMs : (candMs - serverOffsetMs);
+        candidates.push(candLocalMs);
       }
     } else if (rec.type === 'weekly_days') {
-      const candidates = [];
-      for (let dayOffset = 0; dayOffset <= 8; dayOffset++) {
-        const testDate = new Date(Date.UTC(
-          serverDate.getUTCFullYear(),
-          serverDate.getUTCMonth(),
-          serverDate.getUTCDate() + dayOffset,
-          rec.hour || 0,
-          rec.minute || 0,
-          0,
-          0
-        ));
-        const dayOfWeek = testDate.getUTCDay();
-        if (rec.days.includes(dayOfWeek)) {
-          candidates.push(testDate);
-        }
-      }
-
-      // Check active
-      for (const cand of candidates) {
-        const candServerMs = cand.getTime();
-        if (serverNowMs >= candServerMs && serverNowMs < candServerMs + eventDurationMs) {
-          isActive = true;
-          activeRemainingMs = (candServerMs + eventDurationMs) - serverNowMs;
-          nextServerDate = cand;
-          break;
-        }
-      }
-
-      if (!isActive) {
-        for (const cand of candidates) {
-          if (cand.getTime() > serverNowMs) {
-            nextServerDate = cand;
-            break;
-          }
+      for (let d = -7; d <= 8; d++) {
+        const testDate = new Date(Date.UTC(refDate.getUTCFullYear(), refDate.getUTCMonth(), refDate.getUTCDate() + d, rec.hour || 0, rec.minute || 0, 0, 0));
+        if (rec.days.includes(testDate.getUTCDay())) {
+          const candMs = testDate.getTime();
+          const candLocalMs = isUtc ? candMs : (candMs - serverOffsetMs);
+          candidates.push(candLocalMs);
         }
       }
     } else if (rec.type === 'daily') {
-      const candidates = [];
-      for (let dayOffset = 0; dayOffset <= 2; dayOffset++) {
-        const cand = new Date(Date.UTC(
-          serverDate.getUTCFullYear(),
-          serverDate.getUTCMonth(),
-          serverDate.getUTCDate() + dayOffset,
-          rec.hour || 0,
-          rec.minute || 0,
-          0,
-          0
-        ));
-        candidates.push(cand);
-      }
-
-      for (const cand of candidates) {
-        const candServerMs = cand.getTime();
-        if (serverNowMs >= candServerMs && serverNowMs < candServerMs + eventDurationMs) {
-          isActive = true;
-          activeRemainingMs = (candServerMs + eventDurationMs) - serverNowMs;
-          nextServerDate = cand;
-          break;
-        }
-      }
-
-      if (!isActive) {
-        for (const cand of candidates) {
-          if (cand.getTime() > serverNowMs) {
-            nextServerDate = cand;
-            break;
-          }
-        }
+      for (let d = -1; d <= 2; d++) {
+        const candMs = Date.UTC(refDate.getUTCFullYear(), refDate.getUTCMonth(), refDate.getUTCDate() + d, rec.hour || 0, rec.minute || 0, 0, 0);
+        const candLocalMs = isUtc ? candMs : (candMs - serverOffsetMs);
+        candidates.push(candLocalMs);
       }
     }
 
-    if (!nextServerDate) {
-      return null;
+    candidates.sort((a, b) => a - b);
+
+    // Check if active right now
+    let activeCand = null;
+    for (const c of candidates) {
+      if (nowUtcMs >= c && nowUtcMs < c + portalDurationMs) {
+        activeCand = c;
+        break;
+      }
     }
 
-    // Convert server target back to local machine timestamp
-    const nextLocalUtcMs = nextServerDate.getTime() - serverOffsetMs;
-    const nextLocalDate = new Date(nextLocalUtcMs);
-    const msRemaining = isActive ? activeRemainingMs : (nextLocalUtcMs - nowUtcMs);
+    // Find next future spawn
+    const nextCand = candidates.find(c => c > nowUtcMs);
+    if (!nextCand && !activeCand) return null;
+
+    const targetMs = activeCand ? activeCand : nextCand;
+    const targetDate = new Date(targetMs);
+    const isActive = activeCand !== null;
+    const msRemaining = isActive ? (activeCand + portalDurationMs - nowUtcMs) : (nextCand - nowUtcMs);
 
     return {
-      targetDate: nextLocalDate,
-      targetMs: nextLocalUtcMs,
+      targetDate,
+      targetMs,
       msRemaining,
       isActive,
-      activeRemainingMs
+      activeRemainingMs: isActive ? msRemaining : 0
     };
   }
 
