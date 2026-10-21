@@ -1,6 +1,6 @@
 {
   "name": "aion2-timer-overlay",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "In-Game Always-On-Top HUD Overlay for AION 2 Event Timers and Hidden Cubes Hunter",
   "main": "main.js",
   "scripts": {
