@@ -4,7 +4,8 @@
   "description": "In-Game Always-On-Top HUD Overlay for AION 2 Event and Boss Timers",
   "main": "main.js",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "build": "electron-builder --win portable"
   },
   "keywords": [
     "aion2",
@@ -13,9 +14,34 @@
     "bosses",
     "gaming"
   ],
-  "author": "Antigravity",
+  "author": "Byanski",
   "license": "MIT",
+  "build": {
+    "appId": "com.byanski.aion2timeroverlay",
+    "productName": "AION 2 World Timers",
+    "copyright": "Copyright © 2026 Byanski",
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": "portable"
+    },
+    "portable": {
+      "artifactName": "AION2-World-Timers-Overlay.exe"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "index.html",
+      "style.css",
+      "app.js",
+      "sound-synth.js",
+      "timers-data.js",
+      "package.json"
+    ]
+  },
   "devDependencies": {
-    "electron": "^44.9.2"
+    "electron": "^44.9.2",
+    "electron-builder": "^26.15.3"
   }
 }
